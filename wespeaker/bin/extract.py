@@ -53,6 +53,7 @@ def extract(config='conf/config.yaml', **kwargs):
         frontend = frontend_class_dict[frontend_type](
             **test_conf[frontend_args], sample_rate=test_conf['resample_rate'])
         model.add_module("frontend", frontend)
+    
     print('Loading checkpoint ...')
     load_checkpoint(model, model_path)
     print('Finished !!! Start extracting ...')
@@ -95,23 +96,34 @@ def extract(config='conf/config.yaml', **kwargs):
                 if frontend_type == 'fbank':
                     features = batch['feat']
                     features = features.float().to(device)  # (B,T,F)
+                    
+                    # apply cmvn
+                    if test_conf.get('cmvn', True):
+                        features = apply_cmvn(features,
+                                                **test_conf.get('cmvn_args', {}))
+                    
+                    # spec augmentation
+                    if test_conf.get('spec_aug', False):
+                        features = spec_aug(features, **test_conf['spec_aug_args'])
+
+                    outputs = model(features)  # embed or (embed_a, embed_b)
+                
+                elif frontend_type == 'wavlm':
+                    wavs = batch['wav']  # (B,1,W)
+                    wavs = wavs.squeeze(1).float().to(device)  # (B,W)                  
+                    outputs = model(wavs)
+                
                 else:  # 's3prl'
                     wavs = batch['wav']  # (B,1,W)
                     wavs = wavs.squeeze(1).float().to(device)  # (B,W)
                     wavs_len = torch.LongTensor([wavs.shape[1]]).repeat(
                         wavs.shape[0]).to(device)  # (B)
                     features, _ = model.frontend(wavs, wavs_len)
+                    outputs = model(features)  # embed or (embed_a, embed_b)
 
-                # apply cmvn
-                if test_conf.get('cmvn', True):
-                    features = apply_cmvn(features,
-                                          **test_conf.get('cmvn_args', {}))
-                # spec augmentation
-                if test_conf.get('spec_aug', False):
-                    features = spec_aug(features, **test_conf['spec_aug_args'])
+
 
                 # Forward through model
-                outputs = model(features)  # embed or (embed_a, embed_b)
                 embeds = outputs[-1] if isinstance(outputs, tuple) else outputs
                 embeds = embeds.cpu().detach().numpy()  # (B,F)
 

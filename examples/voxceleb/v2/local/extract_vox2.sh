@@ -32,7 +32,7 @@ batch_size_array=(16 1) # batch_size of test set must be 1 !!!
 num_workers_array=(4 1)
 count=${#data_name_array[@]}
 
-for i in $(seq 1 $(($count - 1))); do
+for i in $(seq 0 $((1 - 1))); do
   wavs_num=$(wc -l ${data_scp_path_array[$i]} | awk '{print $1}')
   bash tools/extract_embedding.sh --exp_dir ${exp_dir} \
     --model_path $model_path \

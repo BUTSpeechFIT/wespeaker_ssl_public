@@ -39,14 +39,18 @@ def run_epoch(dataloader, epoch_iter, model, criterion, optimizer, scheduler,
         if frontend_type == 'fbank':
             features = batch['feat']  # (B,T,F)
             features = features.float().to(device)
-        else:  # 's3prl'
+        elif frontend_type == 's3prl':  # 's3prl'
             wavs = batch['wav']  # (B,1,W)
             wavs = wavs.squeeze(1).float().to(device)  # (B,W)
             wavs_len = torch.LongTensor([wavs.shape[1]]).repeat(
                 wavs.shape[0]).to(device)  # (B)
             with torch.cuda.amp.autocast(enabled=configs['enable_amp']):
                 features, _ = model.module.frontend(wavs, wavs_len)
-
+        else:
+            wavs = batch['wav']  # (B,1,W)
+            features = wavs.squeeze(1).float().to(device)  # (B,W)
+            # print(features.shape)
+        
         with torch.cuda.amp.autocast(enabled=configs['enable_amp']):
             # apply cmvn
             if configs['dataset_args'].get('cmvn', True):
@@ -57,9 +61,12 @@ def run_epoch(dataloader, epoch_iter, model, criterion, optimizer, scheduler,
                 features = spec_aug(features, **configs['spec_aug_args'])
 
         with torch.cuda.amp.autocast(enabled=configs['enable_amp']):
-            outputs = model(features)  # (embed_a,embed_b) in most cases
-            embeds = outputs[-1] if isinstance(outputs, tuple) else outputs
-            outputs = model.module.projection(embeds, targets)
+            if frontend_type == 'fbank' or frontend_type == 's3prl':
+                outputs = model(features)  # (embed_a,embed_b) in most cases
+                embeds = outputs[-1] if isinstance(outputs, tuple) else outputs
+                outputs = model.module.projection(embeds, targets)
+            else:
+                outputs = model(features, targets)               
             if isinstance(outputs, tuple):
                 outputs, loss = outputs
             else:
